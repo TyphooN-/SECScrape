@@ -164,28 +164,45 @@ def get_enterprise_value_data(ticker, cik):
         "Enterprise Value": enterprise_value
     }
 
-def get_earnings_date_from_yfinance(ticker):
+def get_earnings_dates(ticker):
     """
-    Gets the next earnings date from yfinance using the calendar attribute.
-    This function has been debugged to handle the data structure correctly.
+    Gets the next and previous earnings dates from yfinance.
+    This function is debugged to correctly handle yfinance data structures.
     """
-    print(f"[INFO] Fetching earnings date for {ticker} from yfinance...")
+    print(f"[INFO] Fetching earnings dates for {ticker}...")
+    next_earnings_date = "Not Available"
+    previous_earnings_date = "Not Available"
+
     try:
         stock = yf.Ticker(ticker)
-        calendar_info = stock.calendar
-        if calendar_info is not None and 'Earnings Date' in calendar_info and calendar_info['Earnings Date']:
-            # The value is a list of datetime objects
-            earnings_dates = calendar_info['Earnings Date']
+
+        # --- MODIFIED SECTION ---
+        # yfinance now returns a DataFrame for earnings_dates.
+        # We will fetch it once and then find the next and previous dates from it.
+        earnings_history = stock.earnings_dates
+
+        if earnings_history is not None and not earnings_history.empty:
+            # The index of the DataFrame contains the earnings dates
             now_utc = datetime.now(timezone.utc)
-            # Find the first date in the list that is in the future
-            for date in sorted(earnings_dates):
-                if date > now_utc:
-                    return date.strftime('%Y-%m-%d')
-        return "Not Available"
+
+            # Find future dates
+            future_dates = earnings_history.index[earnings_history.index > now_utc]
+            if not future_dates.empty:
+                # The first date in the sorted future dates is the next one
+                next_earnings_date = future_dates.min().strftime('%Y-%m-%d')
+
+            # Find past dates
+            past_dates = earnings_history.index[earnings_history.index < now_utc]
+            if not past_dates.empty:
+                # The last date in the sorted past dates is the most recent previous one
+                previous_earnings_date = past_dates.max().strftime('%Y-%m-%d')
+
     except Exception as e:
-        # Hide the specific error as it can be noisy, but log that it failed.
-        print(f"Could not retrieve earnings date for {ticker} from yfinance calendar.")
-        return "Not Available"
+        print(f"Could not retrieve earnings dates for {ticker} from yfinance: {e}")
+
+    return {"next": next_earnings_date, "previous": previous_earnings_date}
+
+
 
 def display_quarterly_data(ticker):
     """Displays earnings date and quarterly data for the last 5 quarters."""
@@ -193,8 +210,11 @@ def display_quarterly_data(ticker):
     print(f"Quarterly Report & Earnings Date for: {ticker.upper()}")
     print("="*80)
 
-    earnings_date_str = get_earnings_date_from_yfinance(ticker)
-    print(f"Next Earnings Date: {earnings_date_str}")
+    # Call the new, corrected function for earnings dates
+    earnings_dates = get_earnings_dates(ticker)
+    print(f"Next Earnings Date: {earnings_dates['next']}")
+    print(f"Previous Earnings Date: {earnings_dates['previous']}")
+
 
     try:
         stock = yf.Ticker(ticker)
@@ -332,4 +352,4 @@ if __name__ == "__main__":
 
         for ticker in tickers:
             display_quarterly_data(ticker)
-            display_yearly_data(ticker) # Call the new yearly data function
+            display_yearly_data(ticker)
