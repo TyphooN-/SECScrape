@@ -1,7 +1,7 @@
 import requests
 import json
 import pandas as pd
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 import yfinance as yf
 
 # --- USER-DEFINED VARIABLES ---
@@ -135,9 +135,9 @@ def get_enterprise_value_data(ticker, cik):
     for tag in debt_tags:
         fact = us_gaap_facts.get(tag)
         if fact:
-            val, date = get_latest_fact_value(fact)
-            if date:
-                current_date = datetime.strptime(date, '%Y-%m-%d')
+            val, date_str = get_latest_fact_value(fact)
+            if date_str:
+                current_date = datetime.strptime(date_str, '%Y-%m-%d')
                 if most_recent_debt_date is None or current_date > most_recent_debt_date:
                     most_recent_debt_date = current_date
     if most_recent_debt_date:
@@ -145,8 +145,8 @@ def get_enterprise_value_data(ticker, cik):
         for tag in debt_tags:
             fact = us_gaap_facts.get(tag)
             if fact:
-                val, date = get_latest_fact_value(fact)
-                if date == debt_date:
+                val, date_str = get_latest_fact_value(fact)
+                if date_str == debt_date:
                     latest_debt_values[tag] = val
         if 'LongTermDebtAndCapitalLeaseObligations' in latest_debt_values or 'DebtAndCapitalLeaseObligationsCurrent' in latest_debt_values:
             total_debt = latest_debt_values.get('LongTermDebtAndCapitalLeaseObligations', 0) + latest_debt_values.get('DebtAndCapitalLeaseObligationsCurrent', 0)
@@ -164,37 +164,42 @@ def get_enterprise_value_data(ticker, cik):
         "Enterprise Value": enterprise_value
     }
 
+# --- FIXED EARNINGS DATE FUNCTION ---
 def get_earnings_dates(ticker):
     """
     Gets the next and previous earnings dates from yfinance.
-    This function is debugged to correctly handle yfinance data structures.
+    This version handles both dictionary and DataFrame calendar objects.
     """
     print(f"[INFO] Fetching earnings dates for {ticker}...")
     next_earnings_date = "Not Available"
     previous_earnings_date = "Not Available"
+    today = date.today()
 
     try:
         stock = yf.Ticker(ticker)
+        calendar = stock.calendar
 
-        # --- MODIFIED SECTION ---
-        # yfinance now returns a DataFrame for earnings_dates.
-        # We will fetch it once and then find the next and previous dates from it.
+        # --- Logic for Next Earnings Date ---
+        earnings_dates_raw = []
+        # Handle dictionary response from yfinance
+        if isinstance(calendar, dict) and 'Earnings Date' in calendar:
+            earnings_dates_raw = calendar['Earnings Date']
+        # Handle DataFrame response
+        elif isinstance(calendar, pd.DataFrame) and 'Earnings Date' in calendar.columns:
+            earnings_dates_raw = calendar['Earnings Date'].dropna().tolist()
+
+        # Find the soonest future date from the list
+        if earnings_dates_raw:
+            future_dates = [d for d in earnings_dates_raw if isinstance(d, date) and d > today]
+            if future_dates:
+                next_earnings_date = min(future_dates).strftime('%Y-%m-%d')
+
+        # --- Logic for Previous Earnings Date ---
         earnings_history = stock.earnings_dates
-
         if earnings_history is not None and not earnings_history.empty:
-            # The index of the DataFrame contains the earnings dates
             now_utc = datetime.now(timezone.utc)
-
-            # Find future dates
-            future_dates = earnings_history.index[earnings_history.index > now_utc]
-            if not future_dates.empty:
-                # The first date in the sorted future dates is the next one
-                next_earnings_date = future_dates.min().strftime('%Y-%m-%d')
-
-            # Find past dates
             past_dates = earnings_history.index[earnings_history.index < now_utc]
             if not past_dates.empty:
-                # The last date in the sorted past dates is the most recent previous one
                 previous_earnings_date = past_dates.max().strftime('%Y-%m-%d')
 
     except Exception as e:
@@ -202,20 +207,79 @@ def get_earnings_dates(ticker):
 
     return {"next": next_earnings_date, "previous": previous_earnings_date}
 
+# --- FIXED DIVIDEND DATE FUNCTION ---
+def get_dividend_info(ticker):
+    """
+    Gets the next and last dividend dates for a given ticker.
+    This version handles both dictionary and DataFrame calendar objects.
+    """
+    try:
+        stock = yf.Ticker(ticker)
+        dividends = stock.dividends
+        today = date.today()
+        today_utc = pd.Timestamp.now(tz='UTC').normalize()
+
+        if dividends.empty or (today_utc - dividends.index.max()).days > 365:
+            return {"is_dividend_stock": False}
+
+        last_payment_date = dividends.index.max().strftime('%Y-%m-%d')
+        calendar = stock.calendar
+        next_ex_div_date = "Not Available"
+        next_payment_date = "Not Available"
+
+        # Handle dictionary response
+        if isinstance(calendar, dict):
+            ex_div_val = calendar.get('Ex-Dividend Date')
+            pay_val = calendar.get('Dividend Date')
+            if ex_div_val and isinstance(ex_div_val, date) and ex_div_val > today:
+                 next_ex_div_date = ex_div_val.strftime('%Y-%m-%d')
+            if pay_val and isinstance(pay_val, date) and pay_val > today:
+                 next_payment_date = pay_val.strftime('%Y-%m-%d')
+
+        # Handle DataFrame response
+        elif isinstance(calendar, pd.DataFrame):
+            if 'Ex-Dividend Date' in calendar.columns and not calendar['Ex-Dividend Date'].dropna().empty:
+                ex_div_val = pd.to_datetime(calendar['Ex-Dividend Date'].dropna().iloc[0]).date()
+                if ex_div_val > today:
+                    next_ex_div_date = ex_div_val.strftime('%Y-%m-%d')
+            if 'Dividend Date' in calendar.columns and not calendar['Dividend Date'].dropna().empty:
+                pay_val = pd.to_datetime(calendar['Dividend Date'].dropna().iloc[0]).date()
+                if pay_val > today:
+                    next_payment_date = pay_val.strftime('%Y-%m-%d')
+
+        return {
+            "is_dividend_stock": True,
+            "last_payment_date": last_payment_date,
+            "next_ex_dividend_date": next_ex_div_date,
+            "next_payment_date": next_payment_date
+        }
+    except Exception as e:
+        print(f"[ERROR] Could not retrieve dividend info for {ticker}: {e}")
+        return {"is_dividend_stock": False}
 
 
+# --- DISPLAY FUNCTION FOR QUARTERLY DATA (Uses the fixed functions) ---
 def display_quarterly_data(ticker):
-    """Displays earnings date and quarterly data for the last 5 quarters."""
+    """Displays earnings dates, dividend info, and quarterly data."""
     print("\n" + "="*80)
-    print(f"Quarterly Report & Earnings Date for: {ticker.upper()}")
+    print(f"Quarterly Report & Key Dates for: {ticker.upper()}")
     print("="*80)
 
-    # Call the new, corrected function for earnings dates
+    # --- EARNINGS DATES ---
     earnings_dates = get_earnings_dates(ticker)
-    print(f"Next Earnings Date: {earnings_dates['next']}")
-    print(f"Previous Earnings Date: {earnings_dates['previous']}")
+    print(f"Next Earnings Date:           {earnings_dates['next']}")
+    print(f"Previous Earnings Date:         {earnings_dates['previous']}")
 
+    # --- DIVIDEND DATES ---
+    dividend_info = get_dividend_info(ticker)
+    if dividend_info.get("is_dividend_stock"):
+        print(f"Next Dividend Payment Date:   {dividend_info.get('next_payment_date', 'N/A')}")
+        print(f"Next Ex-Dividend Date:          {dividend_info.get('next_ex_dividend_date', 'N/A')}")
+        print(f"Last Dividend Payment Date:   {dividend_info.get('last_payment_date', 'N/A')}")
+    else:
+        print(f"Dividend Status:                {ticker.upper()} does not pay a dividend.")
 
+    # --- FINANCIALS ---
     try:
         stock = yf.Ticker(ticker)
         q_financials = stock.quarterly_financials
@@ -224,7 +288,6 @@ def display_quarterly_data(ticker):
             print("\nQuarterly financial data not available.")
             return
 
-        # --- MODIFIED TO 5 QUARTERS ---
         q_financials = q_financials.iloc[:, :5]
         if isinstance(q_cashflow, pd.DataFrame) and not q_cashflow.empty:
             q_cashflow = q_cashflow.iloc[:, :5]
@@ -243,8 +306,7 @@ def display_quarterly_data(ticker):
             print("\nCould not extract key financial metrics.")
             return
 
-        quarterly_df = pd.DataFrame(metrics)
-        quarterly_df = quarterly_df.transpose()
+        quarterly_df = pd.DataFrame(metrics).transpose()
         quarterly_df.index.name = "Metric"
         quarterly_df.columns = [d.strftime('%Y-%m-%d') for d in quarterly_df.columns]
         formatted_df = quarterly_df.map(format_large_number)
@@ -259,12 +321,12 @@ def display_yearly_data(ticker):
     print("\n" + "="*80)
     print(f"Yearly Financial Summary for: {ticker.upper()}")
     print("="*80)
-    
+
     try:
         stock = yf.Ticker(ticker)
         y_financials = stock.financials
         y_cashflow = stock.cashflow
-        
+
         if not isinstance(y_financials, pd.DataFrame) or y_financials.empty:
             print("\nYearly financial data not available.")
             return
@@ -275,7 +337,7 @@ def display_yearly_data(ticker):
             y_cashflow = y_cashflow.iloc[:, :5]
         else:
             y_cashflow = pd.DataFrame()
-            
+
         metrics = {}
         if 'Total Revenue' in y_financials.index:
             metrics['Total Revenue'] = y_financials.loc['Total Revenue']
@@ -287,14 +349,12 @@ def display_yearly_data(ticker):
         if not metrics:
             print("\nCould not extract key yearly financial metrics.")
             return
-            
-        yearly_df = pd.DataFrame(metrics)
-        yearly_df = yearly_df.transpose()
+
+        yearly_df = pd.DataFrame(metrics).transpose()
         yearly_df.index.name = "Metric"
-        # Column headers are already years from yfinance
         yearly_df.columns = [str(d.year) for d in yearly_df.columns]
         formatted_df = yearly_df.map(format_large_number)
-        
+
         print("\nYearly Financial Summary (Last 5 Years):")
         print(formatted_df.to_string())
 
@@ -305,12 +365,12 @@ def display_yearly_data(ticker):
 if __name__ == "__main__":
     # To use the script, you'll need to install the required libraries:
     # pip install requests pandas yfinance
-    
     input_string = input("Enter stock ticker(s), separated by commas (e.g., CHGG, NVDA, AMD, MSFT): ")
     tickers = [t.strip().upper() for t in input_string.split(',') if t.strip()]
     if not tickers:
         print("No valid tickers entered.")
     else:
+        # --- Filings Report ---
         all_filings, ticker_to_cik = [], {}
         for ticker in tickers:
             cik = get_cik(ticker)
@@ -322,12 +382,12 @@ if __name__ == "__main__":
         if all_filings:
             df = pd.DataFrame(sorted(all_filings, key=lambda x: x['Filing Date'], reverse=True)[:MAX_FILINGS])
             print(f"\nDisplaying the top {len(df)} most recent filings for: {', '.join(tickers)}")
-            print(df.to_string(columns=['Ticker', 'Filing Type', 'Filing Date', 'Description', 'Link']))
+            print(df.to_string(columns=['Ticker', 'Filing Type', 'Filing Date', 'Description', 'Link'], index=False))
 
+        # --- Enterprise Value Report ---
         print("\n" + "="*80)
         print("Enterprise Value Report")
-        print("Note: Market Cap and Shares Outstanding are sourced from yfinance.")
-        print("      Other financial data is from the most recent SEC filings.")
+        print("Note: Market Cap is from yfinance. Other financial data is from recent SEC filings.")
         print("="*80)
         ev_data = []
         for ticker in tickers:
@@ -345,11 +405,12 @@ if __name__ == "__main__":
             ev_df = pd.DataFrame(ev_data)
             for col in ["Market Cap", "Total Debt", "Cash & Equivalents", "Enterprise Value"]:
                 if col in ev_df.columns:
-                    ev_df[col] = ev_df[col].apply(lambda x: f"${x:,.0f}" if pd.notna(x) and isinstance(x, (int, float)) else "N/A")
+                    ev_df[col] = ev_df[col].apply(lambda x: format_large_number(x))
             report_cols = ["Ticker", "Enterprise Value", "Market Cap", "Total Debt", "Cash & Equivalents", "Market Cap Date", "Debt Date", "Cash Date"]
             final_cols = [c for c in report_cols if c in ev_df.columns]
             print(ev_df[final_cols].to_string(index=False))
 
+        # --- Individual Ticker Reports ---
         for ticker in tickers:
             display_quarterly_data(ticker)
             display_yearly_data(ticker)
