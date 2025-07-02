@@ -25,6 +25,13 @@ def format_large_number(num):
     else:
         return f"${num:,.2f}"
 
+def format_share_number(num):
+    """Formats a number with commas for readability."""
+    if pd.isna(num) or not isinstance(num, (int, float)):
+        return "N/A"
+    return f"{int(num):,}"
+
+
 def get_latest_stock_price(ticker):
     """Gets the latest closing stock price for a given ticker using yfinance."""
     try:
@@ -232,9 +239,9 @@ def get_dividend_info(ticker):
             ex_div_val = calendar.get('Ex-Dividend Date')
             pay_val = calendar.get('Dividend Date')
             if ex_div_val and isinstance(ex_div_val, date) and ex_div_val > today:
-                 next_ex_div_date = ex_div_val.strftime('%Y-%m-%d')
+                next_ex_div_date = ex_div_val.strftime('%Y-%m-%d')
             if pay_val and isinstance(pay_val, date) and pay_val > today:
-                 next_payment_date = pay_val.strftime('%Y-%m-%d')
+                next_payment_date = pay_val.strftime('%Y-%m-%d')
 
         # Handle DataFrame response
         elif isinstance(calendar, pd.DataFrame):
@@ -257,6 +264,47 @@ def get_dividend_info(ticker):
         print(f"[ERROR] Could not retrieve dividend info for {ticker}: {e}")
         return {"is_dividend_stock": False}
 
+# --- FUNCTION FOR INSTITUTIONAL HOLDERS ---
+def display_institutional_holders(ticker):
+    """Displays all institutional holders for a given ticker."""
+    print("\n" + "="*80)
+    print(f"Institutional Holders for: {ticker.upper()}")
+    print("="*80)
+    try:
+        stock = yf.Ticker(ticker)
+        holders = stock.institutional_holders
+
+        if holders is None or holders.empty:
+            print(f"No institutional holder data available for {ticker.upper()}.")
+            return
+
+        # CHANGED: Use the entire 'holders' DataFrame instead of the head
+        holders_df = holders.copy()
+
+        # --- Robust Formatting ---
+        if 'Shares' in holders_df.columns:
+            holders_df['Shares'] = holders_df['Shares'].apply(format_share_number)
+
+        if '% Out' in holders_df.columns:
+            holders_df['% Out'] = holders_df['% Out'].apply(lambda x: f"{x:.2%}")
+        elif 'pctHeld' in holders_df.columns:
+            holders_df['pctHeld'] = holders_df['pctHeld'].apply(lambda x: f"{x:.2%}")
+            holders_df.rename(columns={'pctHeld': '% Out'}, inplace=True)
+
+        if 'pctChange' in holders_df.columns:
+            holders_df['pctChange'] = holders_df['pctChange'].apply(lambda x: f"{x:+.2%}")
+
+        if 'Date Reported' in holders_df.columns:
+            holders_df['Date Reported'] = pd.to_datetime(holders_df['Date Reported']).dt.strftime('%Y-%m-%d')
+
+        if 'Value' in holders_df.columns:
+             holders_df = holders_df.drop(columns=['Value'])
+
+        print(holders_df.to_string(index=False))
+
+    except Exception as e:
+        print(f"\nAn unexpected error occurred while retrieving institutional holders for {ticker}: {e}")
+
 
 # --- DISPLAY FUNCTION FOR QUARTERLY DATA (Uses the fixed functions) ---
 def display_quarterly_data(ticker):
@@ -268,16 +316,16 @@ def display_quarterly_data(ticker):
     # --- EARNINGS DATES ---
     earnings_dates = get_earnings_dates(ticker)
     print(f"Next Earnings Date:           {earnings_dates['next']}")
-    print(f"Previous Earnings Date:         {earnings_dates['previous']}")
+    print(f"Previous Earnings Date:       {earnings_dates['previous']}")
 
     # --- DIVIDEND DATES ---
     dividend_info = get_dividend_info(ticker)
     if dividend_info.get("is_dividend_stock"):
         print(f"Next Dividend Payment Date:   {dividend_info.get('next_payment_date', 'N/A')}")
-        print(f"Next Ex-Dividend Date:          {dividend_info.get('next_ex_dividend_date', 'N/A')}")
+        print(f"Next Ex-Dividend Date:        {dividend_info.get('next_ex_dividend_date', 'N/A')}")
         print(f"Last Dividend Payment Date:   {dividend_info.get('last_payment_date', 'N/A')}")
     else:
-        print(f"Dividend Status:                {ticker.upper()} does not pay a dividend.")
+        print(f"Dividend Status:              {ticker.upper()} does not pay a dividend.")
 
     # --- FINANCIALS ---
     try:
@@ -414,3 +462,5 @@ if __name__ == "__main__":
         for ticker in tickers:
             display_quarterly_data(ticker)
             display_yearly_data(ticker)
+            # --- ADDED CALL TO THE NEW FUNCTION ---
+            display_institutional_holders(ticker)
