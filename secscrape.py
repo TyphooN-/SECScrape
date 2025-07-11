@@ -3,6 +3,7 @@ import json
 import pandas as pd
 from datetime import datetime, timezone, date
 import yfinance as yf
+import sys
 
 # --- USER-DEFINED VARIABLES ---
 
@@ -12,11 +13,13 @@ MAX_FILINGS = 100
 # --- HELPER FUNCTIONS ---
 
 def format_large_number(num):
-    """Formats a large number into a readable string (B, M, K)."""
+    """Formats a large number into a readable string (T, B, M, K)."""
     if pd.isna(num) or not isinstance(num, (int, float)):
         return "N/A"
     num = float(num)
-    if abs(num) >= 1_000_000_000:
+    if abs(num) >= 1_000_000_000_000:
+        return f"${num / 1_000_000_000_000:,.2f} T"
+    elif abs(num) >= 1_000_000_000:
         return f"${num / 1_000_000_000:,.2f} B"
     elif abs(num) >= 1_000_000:
         return f"${num / 1_000_000:,.2f} M"
@@ -409,11 +412,16 @@ def display_yearly_data(ticker):
     except Exception as e:
         print(f"\nAn unexpected error occurred while retrieving yearly data for {ticker}: {e}")
 
+import sys
+
 # --- MAIN EXECUTION ---
 if __name__ == "__main__":
     # To use the script, you'll need to install the required libraries:
     # pip install requests pandas yfinance
-    input_string = input("Enter stock ticker(s), separated by commas (e.g., CHGG, NVDA, AMD, MSFT): ")
+    if len(sys.argv) > 1:
+        input_string = ",".join(sys.argv[1:])
+    else:
+        input_string = input("Enter stock ticker(s), separated by commas (e.g., CHGG, NVDA, AMD, MSFT): ")
     tickers = [t.strip().upper() for t in input_string.split(',') if t.strip()]
     if not tickers:
         print("No valid tickers entered.")
@@ -428,7 +436,26 @@ if __name__ == "__main__":
             ticker_to_cik[ticker] = cik
             all_filings.extend(fetch_filings_for_ticker(ticker, cik))
         if all_filings:
-            df = pd.DataFrame(sorted(all_filings, key=lambda x: x['Filing Date'], reverse=True)[:MAX_FILINGS])
+            df = pd.DataFrame(sorted(all_filings, key=lambda x: x['Filing Date'], reverse=True))
+            
+            # --- FILINGS SUMMARY ---
+            print(f"\n--- Filings Summary for Top {MAX_FILINGS} ---")
+            summary_df = df.head(MAX_FILINGS)
+            filing_counts = summary_df.groupby('Ticker')['Filing Type'].count()
+            filing_type_counts = summary_df.groupby('Filing Type')['Ticker'].count()
+            date_ranges = summary_df.groupby('Ticker')['Filing Date'].agg(['min', 'max'])
+
+            print("\nTotal Filings per Ticker:")
+            print(filing_counts.to_string())
+
+            print("\nTotal Filings by Type:")
+            print(filing_type_counts.to_string())
+
+            print("\nDate Range of Filings:")
+            print(date_ranges.to_string())
+            print("---------------------------------")
+
+
             print(f"\nDisplaying the top {len(df)} most recent filings for: {', '.join(tickers)}")
             print(df.to_string(columns=['Ticker', 'Filing Type', 'Filing Date', 'Description', 'Link'], index=False))
 
