@@ -1,7 +1,7 @@
 import requests
 import json
 import pandas as pd
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 import yfinance as yf
 import sys
 
@@ -91,16 +91,23 @@ def fetch_filings_for_ticker(ticker, cik):
         return []
 
     filings = []
+    six_months_ago = datetime.now() - timedelta(days=180)
+
     for i in range(len(recent_filings['accessionNumber'])):
         filing_type = recent_filings['form'][i]
-        filing_date = recent_filings['filingDate'][i]
+        filing_date_str = recent_filings['filingDate'][i]
+        filing_date = datetime.strptime(filing_date_str, '%Y-%m-%d')
+
+        if filing_date < six_months_ago:
+            break  # Stop if filings are older than 6 months
+
         description = recent_filings['primaryDocDescription'][i]
         accession_num_stripped = recent_filings['accessionNumber'][i].replace('-', '')
         primary_doc_name = recent_filings['primaryDocument'][i]
         doc_link = f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession_num_stripped}/{primary_doc_name}"
         filings.append({
             "Ticker": ticker.upper(), "Filing Type": filing_type, "Description": description,
-            "Filing Date": filing_date, "Link": doc_link
+            "Filing Date": filing_date_str, "Link": doc_link
         })
     return filings
 
@@ -439,20 +446,16 @@ if __name__ == "__main__":
             df = pd.DataFrame(sorted(all_filings, key=lambda x: x['Filing Date'], reverse=True))
             
             # --- FILINGS SUMMARY ---
-            print(f"\n--- Filings Summary for Top {MAX_FILINGS} ---")
-            summary_df = df.head(MAX_FILINGS)
-            filing_counts = summary_df.groupby('Ticker')['Filing Type'].count()
-            filing_type_counts = summary_df.groupby('Filing Type')['Ticker'].count()
-            date_ranges = summary_df.groupby('Ticker')['Filing Date'].agg(['min', 'max'])
-
-            print("\nTotal Filings per Ticker:")
-            print(filing_counts.to_string())
-
-            print("\nTotal Filings by Type:")
-            print(filing_type_counts.to_string())
-
-            print("\nDate Range of Filings:")
-            print(date_ranges.to_string())
+            print(f"\n--- Filings Summary ---")
+            for ticker in tickers:
+                ticker_df = df[df['Ticker'] == ticker]
+                if not ticker_df.empty:
+                    print(f"\n--- {ticker} ---")
+                    filing_counts = ticker_df.groupby('Filing Type').size()
+                    date_range = ticker_df['Filing Date'].agg(['min', 'max'])
+                    print("Total Filings by Type:")
+                    print(filing_counts.to_string())
+                    print(f"Date Range of Filings: {date_range['min']} to {date_range['max']}")
             print("---------------------------------")
 
 
