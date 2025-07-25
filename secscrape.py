@@ -316,6 +316,22 @@ def display_institutional_holders(ticker):
         print(f"\nAn unexpected error occurred while retrieving institutional holders for {ticker}: {e}")
 
 
+def display_company_summary(ticker):
+    """Displays the company summary for a given ticker."""
+    print("\n" + "="*80)
+    print(f"Company Summary for: {ticker.upper()}")
+    print("="*80)
+    try:
+        stock = yf.Ticker(ticker)
+        summary = stock.info.get('longBusinessSummary')
+        if summary:
+            print(summary)
+        else:
+            print(f"No summary available for {ticker.upper()}.")
+    except Exception as e:
+        print(f"\nAn unexpected error occurred while retrieving company summary for {ticker}: {e}")
+
+
 # --- DISPLAY FUNCTION FOR QUARTERLY DATA (Uses the fixed functions) ---
 def display_quarterly_data(ticker):
     """Displays earnings dates, dividend info, and quarterly data."""
@@ -489,8 +505,32 @@ if __name__ == "__main__":
             print(ev_df[final_cols].to_string(index=False))
 
         # --- Individual Ticker Reports ---
+        all_earnings_dates = []
         for ticker in tickers:
+            display_company_summary(ticker)
             display_quarterly_data(ticker)
             display_yearly_data(ticker)
-            # --- ADDED CALL TO THE NEW FUNCTION ---
             display_institutional_holders(ticker)
+            earnings_dates = get_earnings_dates(ticker)
+            all_earnings_dates.append({
+                "Ticker": ticker,
+                "Next Earnings Date": earnings_dates['next'],
+                "Previous Earnings Date": earnings_dates['previous']
+            })
+
+        # --- Earnings Date Summary ---
+        if all_earnings_dates:
+            print("\n" + "="*80)
+            print("Upcoming Earnings Dates Summary")
+            print("="*80)
+            earnings_df = pd.DataFrame(all_earnings_dates)
+            
+            # Filter for upcoming earnings
+            upcoming_df = earnings_df[earnings_df['Next Earnings Date'] != 'Not Available'].copy()
+            if not upcoming_df.empty:
+                upcoming_df['Next Earnings Date'] = pd.to_datetime(upcoming_df['Next Earnings Date'])
+                upcoming_df = upcoming_df.sort_values(by='Next Earnings Date')
+                upcoming_df['Next Earnings Date'] = upcoming_df['Next Earnings Date'].dt.strftime('%Y-%m-%d')
+                print(upcoming_df.to_string(index=False))
+            else:
+                print("No upcoming earnings dates found for the provided tickers.")
