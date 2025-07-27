@@ -1,4 +1,3 @@
-
 import yfinance as yf
 import pandas as pd
 import argparse
@@ -45,6 +44,7 @@ def scrape_from_csv(csv_path):
             ask_price = row['AskPrice']
             var_1_lot = row['VaR_1_Lot']
             var_to_ask_ratio = row['VaR_to_Ask_Ratio']
+            trade_mode = row['TradeMode']
             print(f"Scraping {symbol}...")
             enterprise_value, market_cap = get_enterprise_value(symbol)
             results.append({
@@ -55,7 +55,8 @@ def scrape_from_csv(csv_path):
                 'Market Cap': market_cap,
                 'Ask Price': ask_price,
                 'VaR_1_Lot': var_1_lot,
-                'VaR_to_Ask_Ratio': var_to_ask_ratio
+                'VaR_to_Ask_Ratio': var_to_ask_ratio,
+                'TradeMode': trade_mode
             })
         
         results_df = pd.DataFrame(results)
