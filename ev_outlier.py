@@ -48,6 +48,63 @@ def get_outlier_note(row, bounds_dict, small_industries_list):
     # Default note if it's not a statistical outlier within its group
     return '(Within Normal Range)'
 
+def _print_table(title, dataframe, columns_info):
+    print(f"\n\n{'='*25} {title} {'='*25}")
+    if dataframe.empty:
+        print("No outliers found in this category.")
+        return
+
+    # Calculate column widths
+    column_widths = {}
+    for col_df_name, col_header, col_format in columns_info:
+        max_len = len(col_header)
+        if col_df_name in dataframe.columns:
+            if col_format:
+                if col_format.endswith('%'):
+                    # Handle percentage formatting separately
+                    base_format = col_format[:-1] # Remove the %
+                    formatted_data = dataframe[col_df_name].apply(lambda x: f"{x:{base_format}}%")
+                else:
+                    formatted_data = dataframe[col_df_name].apply(lambda x: f"{x:{col_format}}")
+                max_len = max(max_len, formatted_data.str.len().max())
+            else:
+                max_len = max(max_len, dataframe[col_df_name].astype(str).str.len().max())
+        column_widths[col_df_name] = max_len
+
+    # Adjust for specific columns that might have fixed width requirements or minimums
+    column_widths['Symbol'] = max(column_widths.get('Symbol', 0), 10)
+    column_widths['IndustryName'] = max(column_widths.get('IndustryName', 0), 40)
+    column_widths['MCap/EV (%)'] = max(column_widths.get('MCap/EV (%)', 0), 15)
+    column_widths['Note'] = max(column_widths.get('Note', 0), 4) # Minimum for 'Note'
+
+    # Print header
+    header_parts = []
+    for col_df_name, col_header, _ in columns_info:
+        header_parts.append(f"{col_header:<{column_widths[col_df_name]}}")
+    header_line = " | ".join(header_parts)
+    print("-" * len(header_line))
+    print(header_line)
+    print("-" * len(header_line))
+
+    # Print data rows
+    for _, row in dataframe.iterrows():
+        row_parts = []
+        for col_df_name, _, col_format in columns_info:
+            value = row[col_df_name]
+            formatted_value_str = ""
+            if col_format:
+                if col_format.endswith('%'):
+                    base_format = col_format[:-1]
+                    formatted_value_str = f"{value:{base_format}}%"
+                else:
+                    formatted_value_str = f"{value:{col_format}}"
+            else:
+                formatted_value_str = str(value)
+            
+            row_parts.append(formatted_value_str.ljust(column_widths[col_df_name]))
+        print(" | ".join(row_parts))
+    print("-" * len(header_line))
+
 def analyze_group(group_name, group_df, bounds_dict=None, small_industries_list=None):
     """
     Performs a statistical VaR outlier analysis on a given group of stocks.
@@ -104,25 +161,25 @@ def analyze_group(group_name, group_df, bounds_dict=None, small_industries_list=
                     axis=1,
                     args=(bounds_dict, small_industries_list)
                 )
-                print("-" * 125)
-                print(f"{'Symbol':<10} | {'Industry':<25} | {'MCap/EV (%)':<15} | {'Note'}")
-                print("-" * 125)
-                for index, row in all_outliers.iterrows():
-                    print(f"{row['Symbol']:<10} | {row['IndustryName']:<25.25} | {row['MCap/EV (%)']:.2f}% | {row['Note']}")
-                print("-" * 125)
+                columns_info = [
+                    ('Symbol', 'Symbol', None),
+                    ('IndustryName', 'Industry', None),
+                    ('MCap/EV (%)', 'MCap/EV (%)', '.2f%'),
+                    ('Note', 'Note', None)
+                ]
+                _print_table("Statistical MCap/EV (%) Outliers", all_outliers, columns_info)
 
 def print_mcap_ev_table(title, dataframe, industry_bounds, small_industries):
-    print(f"\n{'='*25} {title} {'='*25}")
     if not dataframe.empty:
         dataframe['Note'] = dataframe.apply(get_outlier_note, axis=1, args=(industry_bounds, small_industries))
-        print("-" * 125)
-        print(f"{'Symbol':<10} | {'Industry':<40} | {'MCap/EV (%)':<15} | {'Note'}")
-        print("-" * 125)
-        for index, row in dataframe.iterrows():
-            print(f"{row['Symbol']:<10} | {row['IndustryName']:<40.40} | {row['MCap/EV (%)']:.2f}% | {row['Note']}")
-        print("-" * 125)
-    else:
-        print("Could not identify any candidates in this category.")
+    columns_info = [
+        ('Symbol', 'Symbol', None),
+        ('IndustryName', 'Industry', None),
+        ('MCap/EV (%)', 'MCap/EV (%)', '.2f%'),
+        ('Note', 'Note', None)
+    ]
+    _print_table(title, dataframe, columns_info)
+
 
 def find_mcap_ev_outliers(filename, overwrite=False):
     """

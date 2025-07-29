@@ -53,17 +53,74 @@ def analyze_group(group_name, group_df, mcap_bounds, var_bounds):
             upper_bound = Q3 + 1.5 * IQR
             bounds_dict[group_name] = {'lower': lower_bound, 'upper': upper_bound}
 
-def print_outlier_table(title, dataframe):
+def _print_table(title, dataframe, columns_info):
     print(f"\n\n{'='*25} {title} {'='*25}")
-    if not dataframe.empty:
-        print("-" * 150)
-        print(f"{'Symbol':<10} | {'Industry':<40} | {'MCap/EV (%)':<15} | {'VaR/Ask Ratio':<15} | {'Note'}")
-        print("-" * 150)
-        for _, row in dataframe.iterrows():
-            print(f"{row['Symbol']:<10} | {row['IndustryName']:<40.40} | {row['MCap/EV (%)']:.2f}% | {row['VaR_to_Ask_Ratio']:.4f} | {row['Note']}")
-        print("-" * 150)
-    else:
+    if dataframe.empty:
         print("No outliers found in this category.")
+        return
+
+    # Calculate column widths
+    column_widths = {}
+    for col_df_name, col_header, col_format in columns_info:
+        max_len = len(col_header)
+        if col_df_name in dataframe.columns:
+            if col_format:
+                if col_format.endswith('%'):
+                    # Handle percentage formatting separately
+                    base_format = col_format[:-1] # Remove the %
+                    formatted_data = dataframe[col_df_name].apply(lambda x: f"{x:{base_format}}%")
+                else:
+                    formatted_data = dataframe[col_df_name].apply(lambda x: f"{x:{col_format}}")
+                max_len = max(max_len, formatted_data.str.len().max())
+            else:
+                max_len = max(max_len, dataframe[col_df_name].astype(str).str.len().max())
+        column_widths[col_df_name] = max_len
+
+    # Adjust for specific columns that might have fixed width requirements or minimums
+    column_widths['Symbol'] = max(column_widths.get('Symbol', 0), 10)
+    column_widths['IndustryName'] = max(column_widths.get('IndustryName', 0), 40)
+    column_widths['MCap/EV (%)'] = max(column_widths.get('MCap/EV (%)', 0), 15)
+    column_widths['VaR_to_Ask_Ratio'] = max(column_widths.get('VaR_to_Ask_Ratio', 0), 15)
+    column_widths['Note'] = max(column_widths.get('Note', 0), 4) # Minimum for 'Note'
+
+    # Print header
+    header_parts = []
+    for col_df_name, col_header, _ in columns_info:
+        header_parts.append(f"{col_header:<{column_widths[col_df_name]}}")
+    header_line = " | ".join(header_parts)
+    print("-" * len(header_line))
+    print(header_line)
+    print("-" * len(header_line))
+
+    # Print data rows
+    for _, row in dataframe.iterrows():
+        row_parts = []
+        for col_df_name, _, col_format in columns_info:
+            value = row[col_df_name]
+            formatted_value_str = ""
+            if col_format:
+                if col_format.endswith('%'):
+                    base_format = col_format[:-1]
+                    formatted_value_str = f"{value:{base_format}}%"
+                else:
+                    formatted_value_str = f"{value:{col_format}}"
+            else:
+                formatted_value_str = str(value)
+            
+            row_parts.append(formatted_value_str.ljust(column_widths[col_df_name]))
+        print(" | ".join(row_parts))
+    print("-" * len(header_line))
+
+
+def print_outlier_table(title, dataframe):
+    columns_info = [
+        ('Symbol', 'Symbol', None),
+        ('IndustryName', 'Industry', None),
+        ('MCap/EV (%)', 'MCap/EV (%)', '.2f%'),
+        ('VaR_to_Ask_Ratio', 'VaR/Ask Ratio', '.4f'),
+        ('Note', 'Note', None)
+    ]
+    _print_table(title, dataframe, columns_info)
 
 def find_dual_outliers(filename):
     try:
