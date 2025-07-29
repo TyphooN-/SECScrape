@@ -145,6 +145,7 @@ def find_mcap_ev_outliers(filename, overwrite=False):
         print(f"Detected file type: {file_type}. Displaying top/bottom {TOP_N_DISPLAY} assets at end.")
 
         df = pd.read_csv(filename, delimiter=',')
+        df.columns = df.columns.str.strip()
 
         # Check for symbols with invalid values before cleaning
         if 'MCap/EV (%)' in df.columns and 'Symbol' in df.columns:
@@ -155,9 +156,18 @@ def find_mcap_ev_outliers(filename, overwrite=False):
 
         df = df[df['MCap/EV (%)'] != -np.inf] # Exclude rows with -inf
 
-        required_columns = ['Symbol', 'SectorName', 'IndustryName', 'MCap/EV (%)']
+        required_columns = ['Symbol', 'SectorName', 'IndustryName', 'MCap/EV (%)', 'TradeMode']
         if not all(col in df.columns for col in required_columns):
             print(f"Warning: Some required columns are missing. Analysis might be incomplete. Missing: {[col for col in required_columns if col not in df.columns]}")
+
+        # Convert TradeMode to numeric, coercing errors to NaN
+        df['TradeMode'] = pd.to_numeric(df['TradeMode'], errors='coerce')
+        
+        # Identify unactionable symbols based on TradeMode == 3
+        unactionable_symbols_df = df[df['TradeMode'] == 3][['Symbol', 'IndustryName']].copy()
+        
+        # Filter out unactionable symbols from the main DataFrame for analysis
+        df = df[df['TradeMode'] != 3]
 
         industry_counts = df['IndustryName'].value_counts()
         
@@ -210,6 +220,11 @@ def find_mcap_ev_outliers(filename, overwrite=False):
 
         bottom_n_lowest_mcap_ev = global_tradable_stocks_with_etfs.sort_values(by='MCap/EV (%)', ascending=True).head(TOP_N_DISPLAY)
         print_mcap_ev_table(f"Bottom {TOP_N_DISPLAY} Lowest MCap/EV (%) Assets", bottom_n_lowest_mcap_ev, industry_bounds, small_industries)
+
+        if not unactionable_symbols_df.empty:
+            print(f"\n{'='*25} Unactionable (Close-Only) Symbols {'='*25}")
+            for index, row in unactionable_symbols_df.iterrows():
+                print(f"- {row['Symbol']} ({row['IndustryName']})")
 
     except FileNotFoundError:
         print(f"Error: The file '{filename}' was not found.")
