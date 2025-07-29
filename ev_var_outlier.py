@@ -106,12 +106,17 @@ def find_dual_outliers(filename):
         dual_outliers = df[df['Note'].str.contains('Dual Outlier')].copy()
         mcap_outliers = df[df['Note'].str.contains('MCap/EV Outlier')].copy()
         bottom_100_var = df.sort_values(by='VaR_to_Ask_Ratio', ascending=True).head(100)
+        top_100_var = df.sort_values(by='VaR_to_Ask_Ratio', ascending=False).head(100)
         
         mcap_in_bottom_100 = pd.merge(mcap_outliers, bottom_100_var, on='Symbol', how='inner')
         mcap_in_bottom_100['Note'] = mcap_in_bottom_100.apply(lambda row: f"{row['Note_x']} in Bottom 100 VaR", axis=1)
         mcap_in_bottom_100 = mcap_in_bottom_100.rename(columns={'IndustryName_x': 'IndustryName', 'MCap/EV (%)_x': 'MCap/EV (%)', 'VaR_to_Ask_Ratio_x': 'VaR_to_Ask_Ratio'})
+
+        mcap_in_top_100 = pd.merge(mcap_outliers, top_100_var, on='Symbol', how='inner')
+        mcap_in_top_100['Note'] = mcap_in_top_100.apply(lambda row: f"{row['Note_x']} in Top 100 VaR", axis=1)
+        mcap_in_top_100 = mcap_in_top_100.rename(columns={'IndustryName_x': 'IndustryName', 'MCap/EV (%)_x': 'MCap/EV (%)', 'VaR_to_Ask_Ratio_x': 'VaR_to_Ask_Ratio'})
         
-        actionable_outliers = pd.concat([dual_outliers, mcap_in_bottom_100]).drop_duplicates(subset=['Symbol']).sort_values(by='MCap/EV (%)', ascending=False)
+        actionable_outliers = pd.concat([dual_outliers, mcap_in_bottom_100, mcap_in_top_100]).drop_duplicates(subset=['Symbol']).sort_values(by='MCap/EV (%)', ascending=False)
 
         print_outlier_table("Actionable Outliers", actionable_outliers)
 
