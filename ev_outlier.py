@@ -92,7 +92,9 @@ def _print_table(title, dataframe, columns_info):
         for col_df_name, _, col_format in columns_info:
             value = row[col_df_name]
             formatted_value_str = ""
-            if col_format:
+            if pd.isna(value):
+                formatted_value_str = "N/A" # Or an empty string, depending on preference
+            elif col_format:
                 if col_format.endswith('%'):
                     base_format = col_format[:-1]
                     formatted_value_str = f"{value:{base_format}}%"
@@ -165,6 +167,9 @@ def analyze_group(group_name, group_df, bounds_dict=None, small_industries_list=
                     ('Symbol', 'Symbol', None),
                     ('IndustryName', 'Industry', None),
                     ('MCap/EV (%)', 'MCap/EV (%)', '.2f%'),
+                    ('AskPrice', 'Ask Price', '.2f'),
+                    ('Spread %', 'Spread %', '.2f%'),
+                    ('VaR_to_Ask_Ratio', 'VaR/Ask Ratio', None),
                     ('Note', 'Note', None)
                 ]
                 _print_table("Statistical MCap/EV (%) Outliers", all_outliers, columns_info)
@@ -176,6 +181,9 @@ def print_mcap_ev_table(title, dataframe, industry_bounds, small_industries):
         ('Symbol', 'Symbol', None),
         ('IndustryName', 'Industry', None),
         ('MCap/EV (%)', 'MCap/EV (%)', '.2f%'),
+        ('AskPrice', 'Ask Price', '.2f'),
+        ('Spread %', 'Spread %', '.2f%'),
+        ('VaR_to_Ask_Ratio', 'VaR/Ask Ratio', None),
         ('Note', 'Note', None)
     ]
     _print_table(title, dataframe, columns_info)
@@ -213,9 +221,25 @@ def find_mcap_ev_outliers(filename, overwrite=False):
 
         df = df[df['MCap/EV (%)'] != -np.inf] # Exclude rows with -inf
 
-        required_columns = ['Symbol', 'SectorName', 'IndustryName', 'MCap/EV (%)', 'TradeMode']
+        required_columns = ['Symbol', 'SectorName', 'IndustryName', 'MCap/EV (%)', 'TradeMode', 'AskPrice', 'BidPrice', 'VaR_to_Ask_Ratio']
         if not all(col in df.columns for col in required_columns):
             print(f"Warning: Some required columns are missing. Analysis might be incomplete. Missing: {[col for col in required_columns if col not in df.columns]}")
+        
+        # Ensure AskPrice is treated as numeric, coercing errors to NaN
+        if 'AskPrice' in df.columns:
+            df['AskPrice'] = pd.to_numeric(df['AskPrice'], errors='coerce')
+        if 'BidPrice' in df.columns:
+            df['BidPrice'] = pd.to_numeric(df['BidPrice'], errors='coerce')
+
+        # Calculate Spread % if BidPrice and AskPrice are available
+        if 'BidPrice' in df.columns and 'AskPrice' in df.columns:
+            df['Spread %'] = ((df['AskPrice'] - df['BidPrice']) / df['AskPrice']) * 100
+        else:
+            print("Warning: BidPrice or AskPrice not found. Cannot calculate Spread %.")
+            df['Spread %'] = np.nan # Fill with NaN if calculation is not possible
+
+        if 'VaR_to_Ask_Ratio' in df.columns:
+            df['VaR_to_Ask_Ratio'] = pd.to_numeric(df['VaR_to_Ask_Ratio'], errors='coerce')
 
         # Convert TradeMode to numeric, coercing errors to NaN
         df['TradeMode'] = pd.to_numeric(df['TradeMode'], errors='coerce')
