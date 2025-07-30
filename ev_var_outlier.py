@@ -4,7 +4,7 @@ import re
 import argparse
 
 MINIMUM_GROUP_SIZE = 5
-STOCKS_TOP = 50
+TOP_N_DISPLAY = 99 # Default value, can be overridden by user
 
 def get_outlier_note(row, mcap_bounds, var_bounds, small_industries_list):
     industry = row['IndustryName']
@@ -162,18 +162,18 @@ def find_dual_outliers(filename):
         # Consolidate Outliers
         dual_outliers = df[df['Note'].str.contains('Dual Outlier')].copy()
         mcap_outliers = df[df['Note'].str.contains('MCap/EV Outlier')].copy()
-        bottom_100_var = df.sort_values(by='VaR_to_Ask_Ratio', ascending=True).head(100)
-        top_100_var = df.sort_values(by='VaR_to_Ask_Ratio', ascending=False).head(100)
+        bottom_n_var = df.sort_values(by='VaR_to_Ask_Ratio', ascending=True).head(TOP_N_DISPLAY)
+        top_n_var = df.sort_values(by='VaR_to_Ask_Ratio', ascending=False).head(TOP_N_DISPLAY)
         
-        mcap_in_bottom_100 = pd.merge(mcap_outliers, bottom_100_var, on='Symbol', how='inner')
-        mcap_in_bottom_100['Note'] = mcap_in_bottom_100.apply(lambda row: f"{row['Note_x']} in Bottom 100 VaR", axis=1)
-        mcap_in_bottom_100 = mcap_in_bottom_100.rename(columns={'IndustryName_x': 'IndustryName', 'MCap/EV (%)_x': 'MCap/EV (%)', 'VaR_to_Ask_Ratio_x': 'VaR_to_Ask_Ratio'})
+        mcap_in_bottom_n = pd.merge(mcap_outliers, bottom_n_var, on='Symbol', how='inner')
+        mcap_in_bottom_n['Note'] = mcap_in_bottom_n.apply(lambda row: f"{row['Note_x']} in Bottom {TOP_N_DISPLAY} VaR", axis=1)
+        mcap_in_bottom_n = mcap_in_bottom_n.rename(columns={'IndustryName_x': 'IndustryName', 'MCap/EV (%)_x': 'MCap/EV (%)', 'VaR_to_Ask_Ratio_x': 'VaR_to_Ask_Ratio'})
 
-        mcap_in_top_100 = pd.merge(mcap_outliers, top_100_var, on='Symbol', how='inner')
-        mcap_in_top_100['Note'] = mcap_in_top_100.apply(lambda row: f"{row['Note_x']} in Top 100 VaR", axis=1)
-        mcap_in_top_100 = mcap_in_top_100.rename(columns={'IndustryName_x': 'IndustryName', 'MCap/EV (%)_x': 'MCap/EV (%)', 'VaR_to_Ask_Ratio_x': 'VaR_to_Ask_Ratio'})
+        mcap_in_top_n = pd.merge(mcap_outliers, top_n_var, on='Symbol', how='inner')
+        mcap_in_top_n['Note'] = mcap_in_top_n.apply(lambda row: f"{row['Note_x']} in Top {TOP_N_DISPLAY} VaR", axis=1)
+        mcap_in_top_n = mcap_in_top_n.rename(columns={'IndustryName_x': 'IndustryName', 'MCap/EV (%)_x': 'MCap/EV (%)', 'VaR_to_Ask_Ratio_x': 'VaR_to_Ask_Ratio'})
         
-        actionable_outliers = pd.concat([dual_outliers, mcap_in_bottom_100, mcap_in_top_100]).drop_duplicates(subset=['Symbol']).sort_values(by='MCap/EV (%)', ascending=False)
+        actionable_outliers = pd.concat([dual_outliers, mcap_in_bottom_n, mcap_in_top_n]).drop_duplicates(subset=['Symbol']).sort_values(by='MCap/EV (%)', ascending=False)
 
         print_outlier_table("Actionable Outliers", actionable_outliers)
 
