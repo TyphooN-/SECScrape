@@ -124,7 +124,7 @@ def print_outlier_table(title, dataframe):
 
 def find_dual_outliers(filename):
     try:
-        df = pd.read_csv(filename)
+        df = pd.read_csv(filename, delimiter=';')
         df = df.replace([np.inf, -np.inf], np.nan).dropna(subset=['MCap/EV (%)', 'VaR_to_Ask_Ratio'])
 
         # Unactionable Symbols

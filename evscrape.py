@@ -1,5 +1,6 @@
 import yfinance as yf
 import pandas as pd
+import numpy as np
 import argparse
 import os
 
@@ -33,38 +34,38 @@ def scrape_from_csv(csv_path):
     """
     try:
         df = pd.read_csv(csv_path, delimiter=';')
-        # Filter out rows where SectorName is 'Currency'
-        df = df[df['SectorName'] != 'Currency']
-        df = df[df['IndustryName'] != 'Exchange Traded Fund']
-        results = []
-        for index, row in df.iterrows():
+        
+        # Initialize new columns with NaN to ensure they exist before assignment
+        df['Enterprise Value'] = None
+        df['Market Cap'] = None
+        df['MCap/EV (%)'] = None
+
+        # Filter out rows where SectorName is 'Currency' or IndustryName is 'Exchange Traded Fund'
+        # Apply filters after reading to ensure all original columns are preserved for filtered rows as well
+        # The scraping loop will only process the relevant rows
+        
+        # Create a mask for rows to be processed (not Currency and not ETF)
+        process_mask = ~((df['SectorName'] == 'Currency') | (df['IndustryName'] == 'Exchange Traded Fund'))
+
+        for index, row in df[process_mask].iterrows():
             symbol = row['Symbol']
-            sector = row['SectorName']
-            industry = row['IndustryName']
-            ask_price = row['AskPrice']
-            var_1_lot = row['VaR_1_Lot']
-            var_to_ask_ratio = row['VaR_to_Ask_Ratio']
-            trade_mode = row['TradeMode']
             print(f"Scraping {symbol}...")
             enterprise_value, market_cap = get_enterprise_value(symbol)
-            results.append({
-                'Symbol': symbol,
-                'SectorName': sector,
-                'IndustryName': industry,
-                'Enterprise Value': enterprise_value,
-                'Market Cap': market_cap,
-                'Ask Price': ask_price,
-                'VaR_1_Lot': var_1_lot,
-                'VaR_to_Ask_Ratio': var_to_ask_ratio,
-                'TradeMode': trade_mode
-            })
-        
-        results_df = pd.DataFrame(results)
-        results_df['MCap/EV (%)'] = (results_df['Market Cap'] / results_df['Enterprise Value']) * 100
+            
+            # Assign scraped values back to the original DataFrame
+            df.loc[index, 'Enterprise Value'] = enterprise_value
+            df.loc[index, 'Market Cap'] = market_cap
+            
+            # Calculate MCap/EV (%) for the current row if values are available
+            if enterprise_value is not None and market_cap is not None and enterprise_value != 0:
+                df.loc[index, 'MCap/EV (%)'] = (market_cap / enterprise_value) * 100
+            else:
+                df.loc[index, 'MCap/EV (%)'] = np.nan # Assign NaN if calculation is not possible
+
         print("\nScraping complete. Results:")
-        print(results_df)
+        print(df)
         output_filename = f"{os.path.splitext(csv_path)[0]}-EV.csv"
-        results_df.to_csv(output_filename, index=False)
+        df.to_csv(output_filename, index=False, sep=';')
         print(f"\nResults saved to {output_filename}")
 
     except FileNotFoundError:

@@ -201,7 +201,7 @@ def find_mcap_ev_outliers(filename, overwrite=False):
         
         print(f"Detected file type: {file_type}. Displaying top/bottom {TOP_N_DISPLAY} assets at end.")
 
-        df = pd.read_csv(filename, delimiter=',')
+        df = pd.read_csv(filename, delimiter=';')
         df.columns = df.columns.str.strip()
 
         # Check for symbols with invalid values before cleaning
