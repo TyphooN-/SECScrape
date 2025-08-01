@@ -445,12 +445,14 @@ if __name__ == "__main__":
         input_string = ",".join(sys.argv[1:])
     else:
         input_string = input("Enter stock ticker(s), separated by commas (e.g., CHGG, NVDA, AMD, MSFT): ")
+    
     tickers = [t.strip().upper() for t in input_string.split(',') if t.strip()]
     if not tickers:
         print("No valid tickers entered.")
     else:
-        # --- Filings Report ---
-        all_filings, ticker_to_cik = [], {}
+        # --- Data Gathering Phase ---
+        ticker_to_cik = {}
+        all_filings = []
         for ticker in tickers:
             cik = get_cik(ticker)
             if not cik:
@@ -458,23 +460,22 @@ if __name__ == "__main__":
                 continue
             ticker_to_cik[ticker] = cik
             all_filings.extend(fetch_filings_for_ticker(ticker, cik))
+
+        # --- Filings Report ---
         if all_filings:
             df = pd.DataFrame(sorted(all_filings, key=lambda x: x['Filing Date'], reverse=True))
-            
-            # --- FILINGS SUMMARY ---
             print(f"\n--- Filings Summary ---")
             for ticker in tickers:
-                ticker_df = df[df['Ticker'] == ticker]
-                if not ticker_df.empty:
-                    print(f"\n--- {ticker} ---")
-                    filing_counts = ticker_df.groupby('Filing Type').size()
-                    date_range = ticker_df['Filing Date'].agg(['min', 'max'])
-                    print("Total Filings by Type:")
-                    print(filing_counts.to_string())
-                    print(f"Date Range of Filings: {date_range['min']} to {date_range['max']}")
+                if ticker in ticker_to_cik:
+                    ticker_df = df[df['Ticker'] == ticker]
+                    if not ticker_df.empty:
+                        print(f"\n--- {ticker} ---")
+                        filing_counts = ticker_df.groupby('Filing Type').size()
+                        date_range = ticker_df['Filing Date'].agg(['min', 'max'])
+                        print("Total Filings by Type:")
+                        print(filing_counts.to_string())
+                        print(f"Date Range of Filings: {date_range['min']} to {date_range['max']}")
             print("---------------------------------")
-
-
             print(f"\nDisplaying the top {len(df)} most recent filings for: {', '.join(tickers)}")
             print(df.to_string(columns=['Ticker', 'Filing Type', 'Filing Date', 'Description', 'Link'], index=False))
 
@@ -504,19 +505,31 @@ if __name__ == "__main__":
             final_cols = [c for c in report_cols if c in ev_df.columns]
             print(ev_df[final_cols].to_string(index=False))
 
-        # --- Individual Ticker Reports ---
+        # --- Grouped Reports ---
         all_earnings_dates = []
+
+        # Company Summaries
         for ticker in tickers:
-            display_company_summary(ticker)
-            display_quarterly_data(ticker)
-            display_yearly_data(ticker)
-            display_institutional_holders(ticker)
-            earnings_dates = get_earnings_dates(ticker)
-            all_earnings_dates.append({
-                "Ticker": ticker,
-                "Next Earnings Date": earnings_dates['next'],
-                "Previous Earnings Date": earnings_dates['previous']
-            })
+            if ticker in ticker_to_cik:
+                display_company_summary(ticker)
+        
+        # Quarterly and Yearly Data
+        for ticker in tickers:
+            if ticker in ticker_to_cik:
+                display_quarterly_data(ticker)
+                display_yearly_data(ticker)
+                # Collect earnings dates once to avoid redundant calls
+                earnings_dates = get_earnings_dates(ticker)
+                all_earnings_dates.append({
+                    "Ticker": ticker,
+"Next Earnings Date": earnings_dates['next'],
+"Previous Earnings Date": earnings_dates['previous']
+                })
+
+        # Institutional Holders
+        for ticker in tickers:
+            if ticker in ticker_to_cik:
+                display_institutional_holders(ticker)
 
         # --- Earnings Date Summary ---
         if all_earnings_dates:
@@ -524,8 +537,6 @@ if __name__ == "__main__":
             print("Upcoming Earnings Dates Summary")
             print("="*80)
             earnings_df = pd.DataFrame(all_earnings_dates)
-            
-            # Filter for upcoming earnings
             upcoming_df = earnings_df[earnings_df['Next Earnings Date'] != 'Not Available'].copy()
             if not upcoming_df.empty:
                 upcoming_df['Next Earnings Date'] = pd.to_datetime(upcoming_df['Next Earnings Date'])
