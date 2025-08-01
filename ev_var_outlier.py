@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import re
 import argparse
+import sys # Import sys to redirect stdout
+import os # Import os for path manipulation
 
 MINIMUM_GROUP_SIZE = 5
 STOCKS_TOP = 50 # User-defined variable for top/bottom N display for Stocks
@@ -267,4 +269,23 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Find dual outliers for MCap/EV and VaR/Ask Ratio.')
     parser.add_argument('filename', type=str, help='The path to the CSV file to analyze.')
     args = parser.parse_args()
-    find_dual_outliers(args.filename)
+    
+    # --- Output Redirection ---
+    output_filename = "ev_var_outlier.txt"
+    
+    original_stdout = sys.stdout
+    
+    try:
+        with open(output_filename, 'w') as f:
+            sys.stdout = f
+            print(f"Analysis results for {args.filename}")
+            print(f"Report generated on: {pd.Timestamp.now()}\n")
+            
+            find_dual_outliers(args.filename)
+            
+        sys.stdout = original_stdout
+        print(f"Analysis complete. Output saved to '{output_filename}'")
+
+    except Exception as e:
+        sys.stdout = original_stdout
+        print(f"An error occurred during file redirection: {e}")

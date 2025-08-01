@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import re
 import argparse
+import sys # Import sys to redirect stdout
+import os # Import os for path manipulation
 
 # This constant is used in multiple functions, so it's defined globally.
 MINIMUM_GROUP_SIZE = 5
@@ -318,4 +320,29 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    find_mcap_ev_outliers(args.filename)
+    # --- Output Redirection ---
+    output_filename = "ev_outlier.txt"
+    
+    # Save the original stdout so we can restore it later
+    original_stdout = sys.stdout
+    
+    try:
+        # Open the output file in write mode
+        with open(output_filename, 'w') as f:
+            # Redirect stdout to the file
+            sys.stdout = f
+            print(f"Analysis results for {args.filename}")
+            print(f"Report generated on: {pd.Timestamp.now()}\n")
+            
+            # Run the analysis function
+            find_mcap_ev_outliers(args.filename)
+            
+        # Let the user know where the output was saved
+        # (This message will go to the original stdout)
+        sys.stdout = original_stdout
+        print(f"Analysis complete. Output saved to '{output_filename}'")
+
+    except Exception as e:
+        # If anything goes wrong, make sure to restore stdout
+        sys.stdout = original_stdout
+        print(f"An error occurred during file redirection: {e}")
