@@ -5,6 +5,17 @@ import argparse
 import sys # Import sys to redirect stdout
 import os # Import os for path manipulation
 
+class Tee(object):
+    def __init__(self, *files):
+        self.files = files
+    def write(self, obj):
+        for f in self.files:
+            f.write(obj)
+            f.flush()
+    def flush(self):
+        for f in self.files:
+            f.flush()
+
 # This constant is used in multiple functions, so it's defined globally.
 MINIMUM_GROUP_SIZE = 5
 STOCKS_TOP = 50 # User-defined variable for top/bottom N display for Stocks
@@ -321,16 +332,17 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # --- Output Redirection ---
-    output_filename = "ev_outlier.txt"
+    # Construct the output filename based on the input filename
+    base_filename = os.path.splitext(os.path.basename(args.filename))[0]
+    output_filename = f"{base_filename}-ev_outlier.txt"
     
-    # Save the original stdout so we can restore it later
     original_stdout = sys.stdout
     
     try:
         # Open the output file in write mode
         with open(output_filename, 'w') as f:
-            # Redirect stdout to the file
-            sys.stdout = f
+            # Redirect stdout to a Tee object that writes to both the file and original stdout
+            sys.stdout = Tee(f, original_stdout)
             print(f"Analysis results for {args.filename}")
             print(f"Report generated on: {pd.Timestamp.now()}\n")
             
@@ -340,7 +352,7 @@ if __name__ == "__main__":
         # Let the user know where the output was saved
         # (This message will go to the original stdout)
         sys.stdout = original_stdout
-        print(f"Analysis complete. Output saved to '{output_filename}'")
+        print(f"\nAnalysis complete. Output also saved to '{output_filename}'")
 
     except Exception as e:
         # If anything goes wrong, make sure to restore stdout

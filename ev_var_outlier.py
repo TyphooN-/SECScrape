@@ -5,6 +5,17 @@ import argparse
 import sys # Import sys to redirect stdout
 import os # Import os for path manipulation
 
+class Tee(object):
+    def __init__(self, *files):
+        self.files = files
+    def write(self, obj):
+        for f in self.files:
+            f.write(obj)
+            f.flush()
+    def flush(self):
+        for f in self.files:
+            f.flush()
+
 MINIMUM_GROUP_SIZE = 5
 STOCKS_TOP = 50 # User-defined variable for top/bottom N display for Stocks
 CFD_TOP = 40    # User-defined variable for top/bottom N display for CFDs
@@ -271,20 +282,22 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # --- Output Redirection ---
-    output_filename = "ev_var_outlier.txt"
+    # Construct the output filename based on the input filename
+    base_filename = os.path.splitext(os.path.basename(args.filename))[0]
+    output_filename = f"{base_filename}-ev_var_outlier.txt"
     
     original_stdout = sys.stdout
     
     try:
         with open(output_filename, 'w') as f:
-            sys.stdout = f
+            sys.stdout = Tee(f, original_stdout)
             print(f"Analysis results for {args.filename}")
             print(f"Report generated on: {pd.Timestamp.now()}\n")
             
             find_dual_outliers(args.filename)
             
         sys.stdout = original_stdout
-        print(f"Analysis complete. Output saved to '{output_filename}'")
+        print(f"\nAnalysis complete. Output also saved to '{output_filename}'")
 
     except Exception as e:
         sys.stdout = original_stdout
